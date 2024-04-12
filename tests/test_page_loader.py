@@ -4,7 +4,7 @@ import pytest
 import requests_mock
 
 from hexlet_code.page_loader import download, make_path_by_url
-
+#s
 
 def get_file_bytes(filename: str) -> bytes:
     with open(filename, 'rb') as f:
