@@ -1,133 +1,45 @@
-import os.path
-import string
-from pathlib import Path
-from urllib import parse
-
+import os
+import logging
 import requests
-from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
-# todo: использовать дата классы
-
-
-DOWNLOADABLE_TAGS_WITH_SRC_ATTRS = {
-    'img': 'src',
-    'link': 'href',
-    'script': 'src',
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) \
+            Gecko/20100101 Firefox/112.0"
 }
 
+logging.basicConfig(level=logging.INFO)
 
-def get_tags_to_download():
-    return DOWNLOADABLE_TAGS_WITH_SRC_ATTRS.keys()
-
-
-def get_source_attr_for_tag(tag: str) -> str | None:
-    return DOWNLOADABLE_TAGS_WITH_SRC_ATTRS.get(tag)
-
-
-def make_path_by_url(url: str, keep_extension: bool = False) -> str:
-    default_suffix = '.html'
-    parsed_url = parse.urlparse(url)
-
-    suffix = ''
-    url_path = parsed_url.path
-    if keep_extension:
-        suffix = Path(url_path).suffix or default_suffix
-        url_path = str(Path(url_path).with_suffix(''))
-
-    url = f'{parsed_url.netloc}{url_path}'
-
-    path = ''
-    for s in url:
-        if s not in string.ascii_letters + string.digits:
-            path += '-'
+def url_to_filename(url: str, type=".html"):
+    new_url = url.replace("https://", "").replace("http://", "")
+    result = ""
+    for char in new_url:
+        if char.isalnum():
+            result += char
         else:
-            path += s
+            result += "-"
 
-    return f'{path}{suffix}'
+    return result + type
 
+def download(url: str, path: str = os.getcwd()) -> str:
+    logging.info(f"requested url: {url}")
+    absoulute_path = os.path.abspath(path)
+    logging.info(f"output path: {absoulute_path}")
 
-def ensure_absolute_url(url: str, domain_with_scheme: str) -> str:
-    parsed_url = parse.urlparse(url)
-    if not parsed_url.netloc:
-        url = f'{domain_with_scheme}{url}'
-    return url
+    request = requests.get(
+        url, headers=headers,
+        allow_redirects=True, timeout=(3, 7)
+    )
 
+    logging.info(f"responce status: {request.status_code}")
 
-def is_local_resource(url: str, domain_with_scheme: str) -> bool:
-    """Определяем, является ли файл на странице локальным ресурсом, то есть расположенном на одном домене со страницей
+    new_html_file_name = url_to_filename(url)
+    new_html_path = os.path.join(path, new_html_file_name)
 
-    >>> is_local_resource('https://ru.hexlet.org/assets/python.png', 'https://ru.hexlet.org')
-    True
+    new_html_absolute_path = os.path.abspath(new_html_path)
+    logging.info(f"write html file: {new_html_absolute_path}")
 
-    >>> is_local_resource('/assets/python.png', 'https://ru.hexlet.org')
-    True
+    with open(new_html_absolute_path, "w") as html_file:
+        html_file.write(request.text)
 
-    >>> is_local_resource('https://cdn2.hexlet.io/assets/error-pages/404', 'https://ru.hexlet.org')
-    False
-    """
-    parsed_url = parse.urlparse(url)
-    parsed_domain = parse.urlparse(domain_with_scheme)
-    if parsed_url.netloc and parsed_url.netloc != parsed_domain.netloc:
-        return False
-    return True
-
-
-def handle_files_in_html(html_text: str, files_directory: str, domain_with_scheme: str) -> tuple[list[dict], str]:
-    soup = BeautifulSoup(html_text, 'html.parser')
-    result = []
-    for resource in soup.find_all(get_tags_to_download()):
-        src_attr = get_source_attr_for_tag(resource.name)
-        if not src_attr:
-            continue
-
-        if not is_local_resource(resource[src_attr], domain_with_scheme):
-            continue
-
-        absolute_url = ensure_absolute_url(resource[src_attr], domain_with_scheme)
-        downloaded_path = str(Path(files_directory) / make_path_by_url(absolute_url, keep_extension=True))
-
-        result.append({
-            'original_url': resource[src_attr],
-            'downloaded_path': downloaded_path,
-        })
-
-        resource[src_attr] = downloaded_path
-
-    return result, soup.prettify()
-
-
-def download(url: str, directory: str) -> str:
-    """
-
-    Получить содержимое страницы по указанному URL
-    Получить ссылки на ресурсы (картинки) из содержимого страницы и заменить их внутри страницы на путь к локальному файлу
-    Скачать ресурсы в указанную директорию
-    Сохранить страницу в указанную директорию
-    """
-    parsed_url = parse.urlparse(url)
-    domain_with_scheme = f'{parsed_url.scheme}://{parsed_url.netloc}'
-    response = requests.get(url)
-    page_text = response.text
-
-    path = make_path_by_url(url)
-    files_directory = f'{path}_files'
-
-    files, handled_page_text = handle_files_in_html(page_text, files_directory, domain_with_scheme)
-
-    if files and not os.path.exists(Path(directory) / files_directory):
-        os.mkdir(Path(directory) / files_directory)
-
-    for file in files:
-        file_url = ensure_absolute_url(file['original_url'], domain_with_scheme)
-        file_path = Path(directory) / file['downloaded_path']
-        response = requests.get(file_url)
-
-        with open(file_path, 'wb') as f:
-            f.write(response.content)
-
-    filename = f'{path}.html'
-    filepath = Path(directory) / filename
-
-    with open(filepath, 'w') as f:
-        f.write(handled_page_text)
-    return str(filepath)
+    return new_html_path
