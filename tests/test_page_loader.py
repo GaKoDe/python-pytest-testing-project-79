@@ -3,7 +3,7 @@ import os.path
 import pytest
 import requests_mock
 
-from hexlet_code.page_loader import download, make_path_by_url
+from page_loader import download, make_path_by_url
 
 
 def get_file_bytes(filename: str) -> bytes:
